@@ -1,0 +1,170 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DPSS - Professional AI Book Creator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&family=Indie+Flower&family=Patrick+Hand&family=Coming+Soon&family=Permanent+Marker&family=Schoolbell&family=Gochi+Hand&family=Kantumruy+Pro:wght@400;700&family=Freehand&family=Codystar&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+            color: #1e293b;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .font-playfair { font-family: 'Playfair Display', serif !important; }
+        .font-handwritten { font-family: 'Indie Flower', cursive !important; }
+        .font-patrick { font-family: 'Patrick Hand', cursive !important; }
+        .font-coming-soon { font-family: 'Coming Soon', cursive !important; }
+        .font-marker { font-family: 'Permanent Marker', cursive !important; }
+        .font-school { font-family: 'Schoolbell', cursive !important; }
+        .font-gochi { font-family: 'Gochi Hand', cursive !important; }
+        .font-khmer { font-family: 'Kantumruy Pro', sans-serif !important; }
+        .font-khmer-hand { font-family: 'Freehand', cursive !important; }
+        .font-tracing { font-family: 'Codystar', cursive !important; }
+        .font-serif { font-family: 'Lora', serif !important; }
+
+        /* Paper Styles */
+        .paper-lined {
+            background-color: #fff !important;
+            background-image: linear-gradient(transparent 98%, #e2e8f0 98%) !important;
+            background-size: 100% var(--line-height, 3rem) !important;
+            position: relative;
+        }
+        .paper-lined::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 3rem; width: 1px; height: 100%;
+            background-color: #fca5a5 !important;
+        }
+
+        .paper-grid {
+            background-color: #fff !important;
+            background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px) !important;
+            background-size: 1.5rem 1.5rem !important;
+        }
+
+        .paper-dotted {
+            background-color: #fff !important;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px) !important;
+            background-size: 1.5rem 1.5rem !important;
+        }
+
+        .paper-plain { background-color: #fff !important; }
+
+        /* TOC Leader dots */
+        .toc-list li {
+            display: flex;
+            align-items: baseline;
+        }
+        .toc-list li .toc-name { flex: 1; }
+        .toc-list li .toc-dots {
+            flex: 1;
+            border-bottom: 2px dotted #cbd5e1;
+            margin: 0 10px;
+        }
+        .toc-list li .toc-page { font-weight: bold; }
+
+        /* Sizing CSS */
+        .size-A3 { width: 297mm; min-height: 420mm; }
+        .size-A4 { width: 210mm; min-height: 297mm; }
+        .size-A5 { width: 148mm; min-height: 210mm; }
+        .size-A6 { width: 105mm; min-height: 148mm; }
+
+        @media screen {
+            .print-page {
+                margin: 20px auto;
+                box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            }
+        }
+
+        @media print {
+            @page { margin: 0; }
+            @page.A3 { size: A3; }
+            @page.A4 { size: A4; }
+            @page.A5 { size: A5; }
+            @page.A6 { size: A6; }
+
+            .no-print { display: none !important; }
+            body, html { 
+                background: white !important; 
+                margin: 0 !important; 
+                padding: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+            #root { 
+                height: auto !important; 
+                overflow: visible !important; 
+            }
+            .book-container {
+                display: block !important;
+                width: 100% !important;
+                background-color: white !important;
+            }
+            .print-page { 
+                display: block !important;
+                break-after: page !important; 
+                page-break-after: always !important;
+                box-shadow: none !important; 
+                border: none !important; 
+                padding: 0 !important; 
+                width: 100% !important; 
+                margin: 0 !important;
+                background-color: white !important;
+            }
+            
+            /* Enforce sizes in print */
+            .size-A3 { width: 297mm !important; height: 420mm !important; }
+            .size-A4 { width: 210mm !important; height: 297mm !important; }
+            .size-A5 { width: 148mm !important; height: 210mm !important; }
+            .size-A6 { width: 105mm !important; height: 148mm !important; }
+
+            img {
+                max-width: 100% !important;
+                height: auto !important;
+                display: block !important;
+            }
+        }
+
+        .custom-loader {
+            width: 50px;
+            aspect-ratio: 1;
+            display: grid;
+            border: 4px solid #0000;
+            border-radius: 50%;
+            border-right-color: #2563eb;
+            animation: l15 1s infinite linear;
+        }
+        @keyframes l15 { 100% {transform: rotate(1turn)} }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

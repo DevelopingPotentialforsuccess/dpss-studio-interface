@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Book Creation 4 Deploy",
+  "description": "A professional AI-powered platform for generating custom books with advanced styling, handwritten aesthetics, and interactive layouts.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
