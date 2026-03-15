@@ -8,5 +8,11 @@ const getRotatedKey = () => {
   return keys[Math.floor(Math.random() * keys.length)];
 };
 
-// 2. Initialize the AI with a random key
-const genAI = new GoogleGenerativeAI(getRotatedKey());
+// 2. Export the AI instance so App.tsx can see it
+// ADDED "export" HERE - THIS WAS THE MISSING PIECE
+export const genAI = new GoogleGenerativeAI(getRotatedKey());
+
+// 3. Helper to get the model
+export const getGenerativeModel = (modelName: string) => {
+  return genAI.getGenerativeModel({ model: modelName });
+};
