@@ -1,18 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// 1. Get and Rotate Keys
-const getApiKey = (): string => {
-  const raw = import.meta.env.VITE_GEMINI_API_KEY || "";
-  if (!raw.includes(",")) return raw.trim();
-  const keys = raw.split(",").map(k => k.trim()).filter(k => k.length > 0);
-  return keys.length > 0 ? keys[Math.floor(Math.random() * keys.length)] : "";
-};
+// This is the simplest possible way to load the key
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
-// 2. Setup the AI Instance
-export const genAI = new GoogleGenerativeAI(getApiKey());
+// Log to the browser console (Press F12 to see) 
+// This will show if the key is empty or loaded
+console.log("Gemini Engine: Key starts with", API_KEY.substring(0, 4));
 
-// 3. Setup the Model Getter (App.tsx needs this)
+export const genAI = new GoogleGenerativeAI(API_KEY);
+
 export const getGenerativeModel = (modelName: string) => {
-  const rotatedGenAI = new GoogleGenerativeAI(getApiKey());
-  return rotatedGenAI.getGenerativeModel({ model: modelName });
+  return genAI.getGenerativeModel({ model: modelName });
 };
