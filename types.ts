@@ -30,7 +30,8 @@ export enum BookFont {
   GOCHI = 'font-gochi',
   KHMER = 'font-khmer',
   KHMER_HAND = 'font-khmer-hand',
-  TRACING = 'font-tracing'
+  TRACING = 'font-tracing',
+  CAVEAT = 'font-caveat'
 }
 
 export interface TracingItem {

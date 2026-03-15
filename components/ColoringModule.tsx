@@ -213,7 +213,7 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
 
   const ContentBlock = ({ card }: { card: ColoringCard }) => {
     const isTriple = card.layout === WorksheetLayout.TRI_FOLD;
-    const fontsPool = [BookFont.TRACING, BookFont.SCHOOL, BookFont.COMING_SOON, BookFont.GOCHI, BookFont.HANDWRITTEN];
+    const fontsPool = [BookFont.TRACING, BookFont.SCHOOL, BookFont.COMING_SOON, BookFont.GOCHI, BookFont.HANDWRITTEN, BookFont.CAVEAT];
     const imgs = card.imageUrls || [];
 
     return (
