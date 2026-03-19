@@ -45,14 +45,27 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
     setTestStatus({ ...testStatus, [provider]: 'testing' });
     try {
       if (provider === 'gemini') {
+        const isSharedKey = !settings.geminiKey || !settings.useCustomKeys;
         const key = settings.geminiKey || process.env.GEMINI_API_KEY;
-        if (!key) throw new Error('No key');
+        if (!key) throw new Error('No API key found. Please enter your own Gemini key.');
+        
         const ai = new GoogleGenAI({ apiKey: key });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: 'Hello'
-        });
-        if (!response.text) throw new Error('Empty response');
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: 'Hello'
+          });
+          if (!response.text) throw new Error('Empty response from Gemini');
+        } catch (err: any) {
+          if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+            if (isSharedKey) {
+              throw new Error("Shared Gemini Quota Exceeded. This happens because many users are sharing the same built-in key. Please enter your OWN Gemini API key in the settings and turn on 'Use Custom Keys' to avoid this.");
+            } else {
+              throw new Error("Your personal Gemini Quota Exceeded. Please check your Google AI Studio billing or wait a few minutes.");
+            }
+          }
+          throw err;
+        }
       } else {
         const response = await fetch('/api/ai/proxy', {
           method: 'POST',
