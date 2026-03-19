@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { generateIllustration, generateTracingWords } from '../services/geminiService';
 import { ColoringCard, TracingItem, PaperSize, WorksheetLayout, BookFont } from '../types';
 import LoadingSpinner from './LoadingSpinner';
+import { exportToHtml } from '../services/exportService';
 
 interface ColoringModuleProps {
   onBack: () => void;
@@ -254,7 +255,15 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
           <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">Coloring Workbook Lab</h2>
         </div>
         {cards.length > 0 && (
-          <button onClick={() => window.print()} className="bg-slate-900 text-white px-8 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all"><i className="fa-solid fa-print mr-2"></i> Print All Sheets</button>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => exportToHtml('coloring-workbook-content', prompt || 'Coloring_Workbook')} 
+              className="bg-white border border-slate-200 text-slate-700 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-file-code"></i> Export .htm
+            </button>
+            <button onClick={() => window.print()} className="bg-slate-900 text-white px-8 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all"><i className="fa-solid fa-print mr-2"></i> Print All Sheets</button>
+          </div>
         )}
       </header>
 
@@ -384,7 +393,7 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-16 bg-slate-100/30 custom-scrollbar">
-          <div className="mx-auto flex flex-col items-center gap-16">
+          <div id="coloring-workbook-content" className="mx-auto flex flex-col items-center gap-16">
             {cards.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-[500px] text-slate-300 opacity-20">
                 <i className="fa-solid fa-palette text-[120px] mb-8"></i>

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { generateIllustration, generateTracingWords, generateObjectHint, generateWordSearch } from '../services/geminiService';
 import { PaperSize, WorksheetLayout, BookFont } from '../types';
 import LoadingSpinner from './LoadingSpinner';
+import { exportToHtml } from '../services/exportService';
 
 interface HiddenItem {
   name: string;
@@ -374,6 +375,12 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="flex gap-3">
           {generatedBundles.length > 0 && (
             <>
+              <button 
+                onClick={() => exportToHtml('hidden-object-content', theme || 'Hidden_Object_Quest')} 
+                className="bg-white border border-slate-200 text-slate-700 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
+              >
+                <i className="fa-solid fa-file-code"></i> Export .htm
+              </button>
               <button onClick={exportToWord} className="bg-orange-50 text-orange-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:bg-white transition-all">
                 <i className="fa-solid fa-file-word mr-2"></i> Export Word
               </button>
@@ -490,7 +497,7 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-16 bg-slate-100/30 custom-scrollbar">
-          <div className="mx-auto flex flex-col items-center gap-16">
+          <div id="hidden-object-content" className="mx-auto flex flex-col items-center gap-16">
             {generatedBundles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-[500px] text-slate-300 opacity-20">
                 <i className="fa-solid fa-copy text-[120px] mb-8"></i>
