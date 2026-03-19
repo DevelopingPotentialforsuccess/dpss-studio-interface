@@ -13,7 +13,9 @@ const getSettings = (): AISettings => {
     geminiKey: '',
     openaiKey: '',
     deepseekKey: '',
+    deepseekModel: 'deepseek-chat',
     grokKey: '',
+    grokModel: 'grok-2-1212',
     primaryProvider: 'gemini',
     useCustomKeys: false
   };
@@ -61,6 +63,13 @@ async function callOpenAICompatible(
 }
 
 /**
+ * Clean JSON string from potential markdown blocks
+ */
+function cleanJSON(text: string): string {
+  return text.replace(/```json\n?|```/g, '').trim();
+}
+
+/**
  * Unified AI Caller
  */
 async function runAI(options: {
@@ -88,13 +97,27 @@ async function runAI(options: {
       try {
         const ai = new GoogleGenAI({ apiKey: key });
         if (options.isImageGen) {
+          // Warning for high-volume image generation on free tier
+          if (!settings.useCustomKeys) {
+            console.warn("Using shared Gemini key for image generation. Quota is extremely limited.");
+          }
+
           const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
+            model: 'gemini-1.5-flash',
             contents: options.prompt,
             config: { imageConfig: { aspectRatio: "1:1" } }
           });
-          const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-          if (!imgPart) throw new Error("Image node response empty.");
+          
+          const candidate = response.candidates?.[0];
+          if (!candidate) throw new Error("No response from image generation node.");
+
+          const imgPart = candidate.content?.parts.find(p => p.inlineData);
+          if (!imgPart) {
+            const finishReason = candidate.finishReason;
+            if (finishReason === 'SAFETY') throw new Error("SAFETY BLOCK: The AI refused to generate this image due to safety filters. Try a different prompt.");
+            if (finishReason === 'RECITATION') throw new Error("RECITATION BLOCK: The AI refused to generate this image because it might contain copyrighted content.");
+            throw new Error(`Image generation failed (Reason: ${finishReason}). This usually means quota was exceeded or the prompt was blocked.`);
+          }
           return `data:image/png;base64,${imgPart.inlineData.data}`;
         }
 
@@ -104,7 +127,7 @@ async function runAI(options: {
         ] : options.prompt;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-1.5-flash",
           contents,
           config: {
             systemInstruction: options.systemInstruction,
@@ -112,12 +135,25 @@ async function runAI(options: {
           }
         });
         if (!response.text) throw new Error("Gemini returned an empty response.");
-        return response.text;
+        return options.jsonMode ? cleanJSON(response.text) : response.text;
       } catch (e: any) {
         lastError = e;
         console.error(`Gemini Attempt Failed (Key: ${key.substring(0, 6)}...):`, e);
-        if (e.message?.includes("expired") || e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("limit")) continue;
+        // If it's a quota error, try the next key
+        if (e.message?.toLowerCase().includes("quota") || e.message?.includes("429") || e.message?.includes("limit")) continue;
+        // If it's a safety error, don't retry with other keys as it's prompt-related
+        if (e.message?.includes("SAFETY")) throw e;
         throw new Error(`Gemini Error: ${e.message || 'Unknown error'}`);
+      }
+    }
+
+    // If we exhausted all keys and still have a quota error
+    const errText = lastError?.message || '';
+    if (errText.toLowerCase().includes('quota') || errText.includes('429') || errText.includes('RESOURCE_EXHAUSTED')) {
+      if (!settings.useCustomKeys) {
+        throw new Error("QUOTA EXHAUSTED: The shared Gemini key has reached its limit. Please go to Settings, enter your OWN Gemini API key from Google AI Studio, and enable 'Use Custom Keys' to continue.");
+      } else {
+        throw new Error("QUOTA EXHAUSTED: Your personal Gemini API key has reached its limit. Please check your Google AI Studio dashboard or wait a few minutes.");
       }
     }
     throw lastError;
@@ -157,7 +193,7 @@ async function runAI(options: {
     return await callOpenAICompatible(
       'https://api.deepseek.com/v1',
       settings.deepseekKey,
-      'deepseek-chat',
+      settings.deepseekModel || 'deepseek-chat',
       [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],
       options.jsonMode
     );
@@ -169,7 +205,7 @@ async function runAI(options: {
     return await callOpenAICompatible(
       'https://api.x.ai/v1',
       settings.grokKey,
-      'grok-2-1212',
+      settings.grokModel || 'grok-2-1212',
       [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],
       options.jsonMode
     );
@@ -179,20 +215,32 @@ async function runAI(options: {
 }
 
 export const generateTracingWords = async (prompt: string, count: number = 3): Promise<string[]> => {
-  const text = await runAI({
-    prompt: `Generate exactly ${count} educational words suitable for kids based on: "${prompt}". Return JSON: {"words": ["word1", "word2", "word3"]}`,
-    jsonMode: true
-  });
-  return JSON.parse(text || '{"words":[]}').words;
+  try {
+    const text = await runAI({
+      prompt: `Generate exactly ${count} educational words suitable for kids based on: "${prompt}". Return JSON: {"words": ["word1", "word2", "word3"]}`,
+      jsonMode: true
+    });
+    return JSON.parse(text || '{"words":[]}').words;
+  } catch (e) {
+    console.error("Tracing Words Error:", e);
+    // Fallback words if AI fails
+    return ["Apple", "Ball", "Cat"].slice(0, count);
+  }
 };
 
 export const generateWordSearch = async (words: string[], level: number): Promise<string[][]> => {
-  const gridSize = 8 + Math.floor(level);
-  const text = await runAI({
-    prompt: `Create a word search grid of size ${gridSize}x${gridSize} containing: ${words.join(', ')}. Level ${level} difficulty. Return JSON: {"grid": [["A","B"],["C","D"]]}`,
-    jsonMode: true
-  });
-  return JSON.parse(text || '{"grid":[]}').grid;
+  try {
+    const gridSize = Math.min(15, 8 + Math.floor(level));
+    const text = await runAI({
+      prompt: `Create a word search grid of size ${gridSize}x${gridSize} containing: ${words.join(', ')}. Level ${level} difficulty. Return JSON: {"grid": [["A","B"],["C","D"]]}`,
+      jsonMode: true
+    });
+    return JSON.parse(text || '{"grid":[]}').grid;
+  } catch (e) {
+    console.error("Word Search Error:", e);
+    // Fallback empty grid
+    return Array(10).fill(0).map(() => Array(10).fill("X"));
+  }
 };
 
 export const generateObjectHint = async (imageUri: string, items: string[]): Promise<string> => {

@@ -6,7 +6,9 @@ export interface AISettings {
   geminiKey: string;
   openaiKey: string;
   deepseekKey: string;
+  deepseekModel: 'deepseek-chat' | 'deepseek-reasoner';
   grokKey: string;
+  grokModel: 'grok-2-1212' | 'grok-beta';
   primaryProvider: 'gemini' | 'openai' | 'deepseek' | 'grok';
   useCustomKeys: boolean;
 }
@@ -15,7 +17,9 @@ const DEFAULT_SETTINGS: AISettings = {
   geminiKey: '',
   openaiKey: '',
   deepseekKey: '',
+  deepseekModel: 'deepseek-chat',
   grokKey: '',
+  grokModel: 'grok-2-1212',
   primaryProvider: 'gemini',
   useCustomKeys: false
 };
@@ -27,6 +31,15 @@ interface SettingsModuleProps {
 const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  const [serverConfig, setServerConfig] = useState<{hasBuiltInGemini: boolean, env: string} | null>(null);
+
+  useEffect(() => {
+    fetch('/api/ai/config')
+      .then(res => res.json())
+      .then(data => setServerConfig(data))
+      .catch(e => console.error("Failed to fetch server config", e));
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem('dpss_ai_settings');
@@ -52,7 +65,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
         const ai = new GoogleGenAI({ apiKey: key });
         try {
           const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: 'Hello'
           });
           if (!response.text) throw new Error('Empty response from Gemini');
@@ -76,7 +89,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
             apiKey: provider === 'openai' ? settings.openaiKey :
                     provider === 'deepseek' ? settings.deepseekKey : settings.grokKey,
             model: provider === 'openai' ? 'gpt-4o' :
-                   provider === 'deepseek' ? 'deepseek-chat' : 'grok-2-1212',
+                   provider === 'deepseek' ? settings.deepseekModel : settings.grokModel,
             messages: [{ role: 'user', content: 'Hello' }],
             jsonMode: false
           })
@@ -166,9 +179,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
           </div>
 
           {!settings.useCustomKeys && (
-            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex gap-3 items-center">
-              <i className="fa-solid fa-bolt text-blue-500"></i>
-              <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">Currently using Free Gemini (Shared Node)</p>
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <i className="fa-solid fa-bolt text-blue-500"></i>
+                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">
+                  {serverConfig?.hasBuiltInGemini 
+                    ? "Currently using Free Gemini (Shared Node)" 
+                    : "No Shared Key Found. Please add your own key below."}
+                </p>
+              </div>
+              {!serverConfig?.hasBuiltInGemini && (
+                <p className="text-[8px] text-blue-600 font-bold uppercase">
+                  Tip: Go to Google AI Studio to get a free API key.
+                </p>
+              )}
             </div>
           )}
 
@@ -180,7 +204,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
                   <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-gem"></i></div>
                   <div>
                     <h4 className="text-sm font-black text-slate-800 uppercase italic">Google Gemini</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Flash 3.0 & 2.5 Image</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Flash 1.5 & Image Gen</p>
                   </div>
                 </div>
                 <button 
@@ -242,7 +266,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
                   <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-brain"></i></div>
                   <div>
                     <h4 className="text-sm font-black text-slate-800 uppercase italic">Deepseek AI</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Deepseek-V3 & R1</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">V3 (Chat) & R1 (Reasoner)</p>
                   </div>
                 </div>
                 <button 
@@ -257,13 +281,30 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
                   {testStatus['deepseek'] === 'testing' ? 'Testing...' : testStatus['deepseek'] === 'success' ? 'Success!' : testStatus['deepseek'] === 'error' ? 'Failed' : 'Test'}
                 </button>
               </div>
-              <input 
-                type="password" 
-                value={settings.deepseekKey} 
-                onChange={(e) => setSettings({...settings, deepseekKey: e.target.value})}
-                placeholder="ds-..." 
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-indigo-500"
-              />
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setSettings({...settings, deepseekModel: 'deepseek-chat'})}
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${settings.deepseekModel === 'deepseek-chat' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100'}`}
+                  >
+                    V3 Chat
+                  </button>
+                  <button 
+                    onClick={() => setSettings({...settings, deepseekModel: 'deepseek-reasoner'})}
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${settings.deepseekModel === 'deepseek-reasoner' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100'}`}
+                  >
+                    R1 Reasoner
+                  </button>
+                </div>
+                <input 
+                  type="password" 
+                  value={settings.deepseekKey} 
+                  onChange={(e) => setSettings({...settings, deepseekKey: e.target.value})}
+                  placeholder="ds-..." 
+                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-indigo-500"
+                />
+                <p className="text-[8px] font-bold text-slate-400 uppercase text-center italic">Requires personal API key from deepseek.com</p>
+              </div>
             </div>
 
             {/* Grok */}
@@ -273,7 +314,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
                   <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-x"></i></div>
                   <div>
                     <h4 className="text-sm font-black text-slate-800 uppercase italic">X.AI Grok</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Grok-2 & Grok-Vision</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Grok-2 & Grok-Beta</p>
                   </div>
                 </div>
                 <button 
@@ -288,13 +329,29 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
                   {testStatus['grok'] === 'testing' ? 'Testing...' : testStatus['grok'] === 'success' ? 'Success!' : testStatus['grok'] === 'error' ? 'Failed' : 'Test'}
                 </button>
               </div>
-              <input 
-                type="password" 
-                value={settings.grokKey} 
-                onChange={(e) => setSettings({...settings, grokKey: e.target.value})}
-                placeholder="xai-..." 
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-black"
-              />
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setSettings({...settings, grokModel: 'grok-2-1212'})}
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${settings.grokModel === 'grok-2-1212' ? 'bg-black text-white border-black' : 'bg-white text-slate-400 border-slate-100'}`}
+                  >
+                    Grok-2
+                  </button>
+                  <button 
+                    onClick={() => setSettings({...settings, grokModel: 'grok-beta'})}
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${settings.grokModel === 'grok-beta' ? 'bg-black text-white border-black' : 'bg-white text-slate-400 border-slate-100'}`}
+                  >
+                    Grok-Beta
+                  </button>
+                </div>
+                <input 
+                  type="password" 
+                  value={settings.grokKey} 
+                  onChange={(e) => setSettings({...settings, grokKey: e.target.value})}
+                  placeholder="xai-..." 
+                  className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-black"
+                />
+              </div>
             </div>
           </div>
         </section>

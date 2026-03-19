@@ -75,20 +75,29 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
     }
   };
 
-  const generateWorksheets = async () => {
+  const generateWorksheets = async (singlePageIdx?: number) => {
     if (uploadImages.length === 0 && !prompt) return alert("Please provide a prompt or upload reference images.");
+    
+    const settings = JSON.parse(localStorage.getItem('dpss_ai_settings') || '{}');
+    const isFreeTier = !settings.useCustomKeys || !settings.geminiKey;
+    
+    if (isFreeTier && pageCount > 2 && singlePageIdx === undefined) {
+      if (!window.confirm(`Warning: You are generating ${pageCount} pages on the FREE tier. This will likely exceed your quota. Would you like to proceed anyway? (Tip: Use your own API key in Settings for higher limits)`)) {
+        return;
+      }
+    }
+
     setLoading(true);
-    setLoadingMsg(`Executing multi-node rendering for ${pageCount} workbook pages...`);
+    setLoadingMsg(`Executing multi-node rendering...`);
     
     try {
-      const generatedCards: ColoringCard[] = [];
-      const totalToGen = Math.max(pageCount, uploadImages.length);
-      const positionPool: ('center' | 'top' | 'left' | 'right')[] = ['center', 'top', 'left', 'right'];
+      const startIdx = singlePageIdx !== undefined ? singlePageIdx : 0;
+      const endIdx = singlePageIdx !== undefined ? singlePageIdx + 1 : Math.max(pageCount, uploadImages.length);
+      
+      const newCards = [...cards];
 
-      const prompts = prompt.split(',').map(p => p.trim()).filter(Boolean);
-
-      for (let i = 0; i < totalToGen; i++) {
-        setLoadingMsg(`Rendering Sheet ${i + 1} of ${totalToGen}...`);
+      for (let i = startIdx; i < endIdx; i++) {
+        setLoadingMsg(`Rendering Sheet ${i + 1} of ${endIdx}...`);
         try {
           let currentImages: string[] = [];
           
@@ -99,34 +108,30 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
               ? `with a massive detailed immersive background scenery filling the ENTIRE frame from edge to edge` 
               : `STRICTLY NO BACKGROUND, pure white background, isolated characters only`;
             
-            const activePos = superstarPosition === 'randomize' ? positionPool[Math.floor(Math.random() * positionPool.length)] : superstarPosition;
+            const activePos = superstarPosition === 'randomize' ? (['center', 'top', 'left', 'right'][Math.floor(Math.random() * 4)] as any) : superstarPosition;
             const positionPart = `placed exactly at the ${activePos} of its own frame`;
             const sizeDesc = heroSize === 'full' ? 'occupying 100% of its space' : `occupying roughly ${heroSize}% of its space area`;
 
             if (heroCount === 3) {
-              // Generate 3 separate images to fill the Left, Middle, Right spaces
+              const prompts = prompt.split(',').map(p => p.trim()).filter(Boolean);
               const hero1 = prompts[0] || prompt;
               const hero2 = prompts[1] || prompts[0] || prompt;
               const hero3 = prompts[2] || prompts[1] || prompts[0] || prompt;
 
-              setLoadingMsg(`Rendering Hero 1 of 3 for Sheet ${i+1}...`);
+              setLoadingMsg(`Rendering Hero 1/3 for Sheet ${i+1}...`);
               const img1 = await generateIllustration(`STRICT BLACK AND WHITE ONLY, coloring book style. Subject: ${hero1}. ${positionPart}. ${sizeDesc}. ${backgroundPart}.`);
               
-              setLoadingMsg(`Rendering Hero 2 of 3 for Sheet ${i+1}...`);
+              setLoadingMsg(`Rendering Hero 2/3 for Sheet ${i+1}...`);
               const img2 = await generateIllustration(`STRICT BLACK AND WHITE ONLY, coloring book style. Subject: ${hero2}. ${positionPart}. ${sizeDesc}. ${backgroundPart}.`);
               
-              setLoadingMsg(`Rendering Hero 3 of 3 for Sheet ${i+1}...`);
+              setLoadingMsg(`Rendering Hero 3/3 for Sheet ${i+1}...`);
               const img3 = await generateIllustration(`STRICT BLACK AND WHITE ONLY, coloring book style. Subject: ${hero3}. ${positionPart}. ${sizeDesc}. ${backgroundPart}.`);
               
               currentImages = [img1, img2, img3];
             } else {
-              // Standard single image generation
-              let countPart = "";
-              if (heroCount === 1) {
-                countPart = `featuring one large primary character ${positionPart}, ${sizeDesc}`;
-              } else {
-                countPart = `featuring TWO characters spread far apart, ${sizeDesc}`;
-              }
+              const countPart = heroCount === 1 
+                ? `featuring one large primary character ${positionPart}, ${sizeDesc}`
+                : `featuring TWO characters spread far apart, ${sizeDesc}`;
 
               const masterPrompt = `STRICT BLACK AND WHITE ONLY, heavy black line art (weight: ${lineThickness}pt), coloring book style, no grey, no shading. Subject: ${prompt}. ${countPart}. ${backgroundPart}. High contrast, bold outlines. Fill the horizontal span from edge to edge.`;
               const img = await generateIllustration(masterPrompt);
@@ -135,20 +140,28 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
           }
           
           if (currentImages.length > 0) {
-            generatedCards.push({
+            const newCard = {
               id: Math.random().toString(36).substr(2, 9),
               imageUrls: currentImages,
               tracingItems: JSON.parse(JSON.stringify(tracingItems)), 
               paperSize, layout, teacherName, date: worksheetDate,
               parentSignature, hasStars: rewardStyle === 'stars', lineThickness, elementSpacing, tracingSpacing,
               frameStyle: frameStyle === 'random' ? (['bubbles', 'stars', 'leaves', 'classic'][Math.floor(Math.random() * 4)] as any) : frameStyle
-            });
+            };
+            
+            if (singlePageIdx !== undefined) {
+              newCards[singlePageIdx] = newCard;
+            } else {
+              newCards.push(newCard);
+            }
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Render failed for page ${i + 1}.`, err);
+          alert(`Page ${i + 1} failed: ${err.message}`);
+          if (err.message?.includes('quota') || err.message?.includes('429')) break;
         }
       }
-      setCards(generatedCards);
+      setCards(newCards);
     } catch (e: any) {
       alert("Workbook generation failed: " + e.message);
     } finally {
@@ -401,7 +414,23 @@ const ColoringModule: React.FC<ColoringModuleProps> = ({ onBack }) => {
               </div>
             ) : (
               cards.map((card) => (
-                <div key={card.id} className="bg-white shadow-2xl flex flex-col print-page size-A4 relative rounded-[3rem] overflow-hidden mb-12">
+                <div key={card.id} className="bg-white shadow-2xl flex flex-col print-page size-A4 relative rounded-[3rem] overflow-hidden mb-12 group/card">
+                  <div className="absolute top-4 right-4 z-50 opacity-0 group-hover/card:opacity-100 transition-opacity no-print flex gap-2">
+                    <button 
+                      onClick={() => generateWorksheets(cards.indexOf(card))}
+                      className="bg-white/90 backdrop-blur shadow-lg border border-slate-200 p-3 rounded-xl text-orange-600 hover:bg-orange-600 hover:text-white transition-all"
+                      title="Regenerate this page"
+                    >
+                      <i className="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                    <button 
+                      onClick={() => setCards(cards.filter(c => c.id !== card.id))}
+                      className="bg-white/90 backdrop-blur shadow-lg border border-slate-200 p-3 rounded-xl text-red-600 hover:bg-red-600 hover:text-white transition-all"
+                      title="Delete this page"
+                    >
+                      <i className="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
                   <FrameDecorator type={card.frameStyle} />
                   {card.layout === WorksheetLayout.FULL_PAGE && (
                     <div className="p-12 flex-1 flex flex-col relative">

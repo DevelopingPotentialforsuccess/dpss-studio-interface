@@ -7,6 +7,14 @@ import SettingsModule from './components/SettingsModule';
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.DASHBOARD);
+  const [serverConfig, setServerConfig] = React.useState<{hasBuiltInGemini: boolean} | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/ai/config')
+      .then(res => res.json())
+      .then(data => setServerConfig(data))
+      .catch(e => console.error("Config fetch failed", e));
+  }, []);
   
   const renderDashboard = () => (
     <div className="min-h-screen bg-[#f8fafc] p-12 lg:p-24 overflow-x-hidden relative">
@@ -16,6 +24,12 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
                <div className="w-12 h-1 bg-orange-600 rounded-full"></div>
                <p className="text-xs font-black uppercase tracking-[0.3em] text-orange-600">Premium AI Multi-Lab Hub</p>
+               {serverConfig && (
+                 <div className={`ml-4 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 ${serverConfig.hasBuiltInGemini ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                   <div className={`w-1.5 h-1.5 rounded-full ${serverConfig.hasBuiltInGemini ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                   {serverConfig.hasBuiltInGemini ? 'Shared Node Online' : 'Personal Key Required'}
+                 </div>
+               )}
             </div>
             <h1 className="text-7xl font-playfair font-black text-slate-900 tracking-tighter uppercase italic leading-[0.9]">DPSS STUDIO</h1>
           </div>
