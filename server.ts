@@ -1,11 +1,25 @@
 import express from 'express';
 import path from 'path';
+import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 app.use(express.json());
 
+// Initialize Gemini on server
+const getGeminiClient = (apiKey?: string) => {
+  const key = apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI(key);
+};
+
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', node: process.version, env: process.env.NODE_ENV, vercel: !!process.env.VERCEL });
+  res.json({ 
+    status: 'ok', 
+    node: process.version, 
+    env: process.env.NODE_ENV, 
+    vercel: !!process.env.VERCEL,
+    hasGeminiKey: !!(process.env.GEMINI_API_KEY || process.env.API_KEY)
+  });
 });
 
 app.get('/api/ai/config', (req, res) => {
@@ -16,10 +30,64 @@ app.get('/api/ai/config', (req, res) => {
 });
 
 app.post('/api/ai/proxy', async (req, res) => {
-  const { baseUrl, apiKey, model, messages, jsonMode, isImageGen, prompt } = req.body;
-  const sanitizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const { provider, baseUrl, apiKey, model, messages, jsonMode, isImageGen, prompt, systemInstruction, imageUri } = req.body;
   
   try {
+    // 1. Handle Gemini via SDK on Server
+    if (provider === 'gemini') {
+      const genAI = getGeminiClient(apiKey);
+      if (!genAI) {
+        return res.status(400).json({ error: { message: "Gemini API Key missing on server. Please set GEMINI_API_KEY in environment variables." } });
+      }
+
+      const geminiModel = genAI.getGenerativeModel({ 
+        model: model || "gemini-1.5-flash",
+        systemInstruction: systemInstruction
+      });
+
+      if (isImageGen) {
+        // Note: Image generation via generateContent is experimental/specific to some models
+        const result = await geminiModel.generateContent(prompt);
+        const response = await result.response;
+        const candidate = response.candidates?.[0];
+        const imgPart = candidate?.content?.parts.find(p => p.inlineData);
+        
+        if (!imgPart) {
+          return res.status(400).json({ error: { message: `Image generation failed. Reason: ${candidate?.finishReason || 'Unknown'}` } });
+        }
+        return res.json({ image: `data:image/png;base64,${imgPart.inlineData.data}` });
+      }
+
+      let contents: any;
+      if (imageUri) {
+        contents = [
+          { inlineData: { mimeType: "image/png", data: imageUri.split(',')[1] } },
+          { text: prompt }
+        ];
+      } else if (messages && messages.length > 0) {
+        // Convert OpenAI messages to Gemini contents
+        contents = messages.map((m: any) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        }));
+      } else {
+        contents = prompt;
+      }
+
+      const result = await geminiModel.generateContent({
+        contents,
+        generationConfig: {
+          responseMimeType: jsonMode ? "application/json" : "text/plain"
+        }
+      });
+      
+      const response = await result.response;
+      return res.json({ text: response.text() });
+    }
+
+    // 2. Handle OpenAI-compatible APIs
+    const sanitizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    
     if (isImageGen && baseUrl.includes('openai.com')) {
       const response = await fetch(`${sanitizedBaseUrl}/images/generations`, {
         method: 'POST',

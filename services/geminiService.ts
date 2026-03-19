@@ -82,81 +82,44 @@ async function runAI(options: {
   const settings = getSettings();
   const provider = settings.useCustomKeys ? settings.primaryProvider : 'gemini';
 
-  // 1. Handle Gemini (Built-in or Custom)
+  // 1. Handle Gemini (via server proxy)
   if (provider === 'gemini') {
-    const keys = [
-      settings.useCustomKeys ? settings.geminiKey : '',
-      process.env.API_KEY,
-      process.env.GEMINI_API_KEY
-    ].filter(Boolean) as string[];
+    const apiKey = settings.useCustomKeys ? settings.geminiKey : '';
+    
+    try {
+      const response = await fetch('/api/ai/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'gemini',
+          apiKey,
+          model: 'gemini-1.5-flash',
+          prompt: options.prompt,
+          systemInstruction: options.systemInstruction,
+          jsonMode: options.jsonMode,
+          imageUri: options.imageUri,
+          isImageGen: options.isImageGen
+        })
+      });
 
-    if (keys.length === 0) throw new Error("No Gemini API Key found. Please add one in Settings.");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || "Gemini Request Failed");
+      }
 
-    let lastError: any;
-    for (const key of keys) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: key });
-        if (options.isImageGen) {
-          // Warning for high-volume image generation on free tier
-          if (!settings.useCustomKeys) {
-            console.warn("Using shared Gemini key for image generation. Quota is extremely limited.");
-          }
-
-          const response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
-            contents: options.prompt,
-            config: { imageConfig: { aspectRatio: "1:1" } }
-          });
-          
-          const candidate = response.candidates?.[0];
-          if (!candidate) throw new Error("No response from image generation node.");
-
-          const imgPart = candidate.content?.parts.find(p => p.inlineData);
-          if (!imgPart) {
-            const finishReason = candidate.finishReason;
-            if (finishReason === 'SAFETY') throw new Error("SAFETY BLOCK: The AI refused to generate this image due to safety filters. Try a different prompt.");
-            if (finishReason === 'RECITATION') throw new Error("RECITATION BLOCK: The AI refused to generate this image because it might contain copyrighted content.");
-            throw new Error(`Image generation failed (Reason: ${finishReason}). This usually means quota was exceeded or the prompt was blocked.`);
-          }
-          return `data:image/png;base64,${imgPart.inlineData.data}`;
+      if (options.isImageGen) return data.image;
+      return options.jsonMode ? cleanJSON(data.text) : data.text;
+    } catch (e: any) {
+      console.error('Gemini Proxy Error:', e);
+      if (e.message?.toLowerCase().includes("quota") || e.message?.includes("429")) {
+        if (!settings.useCustomKeys) {
+          throw new Error("QUOTA EXHAUSTED: The shared Gemini key has reached its limit. Please go to Settings, enter your OWN Gemini API key, and enable 'Use Custom Keys'.");
+        } else {
+          throw new Error("QUOTA EXHAUSTED: Your personal Gemini API key has reached its limit.");
         }
-
-        const contents: any = options.imageUri ? [
-          { inlineData: { mimeType: "image/png", data: options.imageUri.split(',')[1] } },
-          { text: options.prompt }
-        ] : options.prompt;
-
-        const response = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
-          contents,
-          config: {
-            systemInstruction: options.systemInstruction,
-            responseMimeType: options.jsonMode ? "application/json" : undefined
-          }
-        });
-        if (!response.text) throw new Error("Gemini returned an empty response.");
-        return options.jsonMode ? cleanJSON(response.text) : response.text;
-      } catch (e: any) {
-        lastError = e;
-        console.error(`Gemini Attempt Failed (Key: ${key.substring(0, 6)}...):`, e);
-        // If it's a quota error, try the next key
-        if (e.message?.toLowerCase().includes("quota") || e.message?.includes("429") || e.message?.includes("limit")) continue;
-        // If it's a safety error, don't retry with other keys as it's prompt-related
-        if (e.message?.includes("SAFETY")) throw e;
-        throw new Error(`Gemini Error: ${e.message || 'Unknown error'}`);
       }
+      throw new Error(`Gemini Error: ${e.message || 'Unknown error'}`);
     }
-
-    // If we exhausted all keys and still have a quota error
-    const errText = lastError?.message || '';
-    if (errText.toLowerCase().includes('quota') || errText.includes('429') || errText.includes('RESOURCE_EXHAUSTED')) {
-      if (!settings.useCustomKeys) {
-        throw new Error("QUOTA EXHAUSTED: The shared Gemini key has reached its limit. Please go to Settings, enter your OWN Gemini API key from Google AI Studio, and enable 'Use Custom Keys' to continue.");
-      } else {
-        throw new Error("QUOTA EXHAUSTED: Your personal Gemini API key has reached its limit. Please check your Google AI Studio dashboard or wait a few minutes.");
-      }
-    }
-    throw lastError;
   }
 
   // 2. Handle OpenAI
