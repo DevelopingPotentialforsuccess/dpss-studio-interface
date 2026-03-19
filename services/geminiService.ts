@@ -1,23 +1,51 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { AISettings } from "../components/SettingsModule";
+
+const getSettings = (): AISettings | null => {
+  const saved = localStorage.getItem('dpss_ai_settings');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+};
 
 /**
  * Multi-Node Fallback Architecture
  * Automatically rotates keys when a quota or balance error occurs.
  */
-const FALLBACK_KEYS = [
-  "AIzaSyDM0-uHXjX_LYwOLcs_j9virMFUL3eX2Xs", // Requested default
-  "AIzaSyAMdJJiItIVmN3zjzWqhZZX94cL8PzGJ7M",
-  "AIzaSyAqaqCaDHw2LQaYIke5CJ8ctM4oevspRig",
-  "AIzaSyApBrvFBVOGsyzTKxJ5eBts70Hy6VMslp0",
-  process.env.API_KEY, 
-].filter(Boolean) as string[];
+const getFallbackKeys = () => {
+  const settings = getSettings();
+  const keys = [
+    "AIzaSyDM0-uHXjX_LYwOLcs_j9virMFUL3eX2Xs", // Requested default
+    "AIzaSyAMdJJiItIVmN3zjzWqhZZX94cL8PzGJ7M",
+    "AIzaSyAqaqCaDHw2LQaYIke5CJ8ctM4oevspRig",
+    "AIzaSyApBrvFBVOGsyzTKxJ5eBts70Hy6VMslp0",
+    process.env.API_KEY, 
+  ];
+
+  if (settings?.useCustomKeys && settings.geminiKey) {
+    // Prioritize user key
+    return [settings.geminiKey, ...keys.filter(Boolean)] as string[];
+  }
+
+  return keys.filter(Boolean) as string[];
+};
 
 /**
  * Executes operation with automatic rotation between keys on quota exhaustion.
  */
 async function runWithFallback<T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
-  const uniqueKeys = Array.from(new Set(FALLBACK_KEYS));
+  const settings = getSettings();
+  
+  // If user explicitly chose a non-gemini provider, we should handle that
+  // For now, we'll focus on Gemini but allow the user to provide their own key
+  
+  const uniqueKeys = Array.from(new Set(getFallbackKeys()));
   let lastError: any;
 
   for (const key of uniqueKeys) {

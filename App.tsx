@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { AppMode } from './types';
 import ColoringModule from './components/ColoringModule';
 import HiddenObjectModule from './components/HiddenObjectModule';
+import SettingsModule from './components/SettingsModule';
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.DASHBOARD);
@@ -10,12 +11,20 @@ const App: React.FC = () => {
   const renderDashboard = () => (
     <div className="min-h-screen bg-[#f8fafc] p-12 lg:p-24 overflow-x-hidden relative">
       <div className="max-w-7xl mx-auto space-y-20">
-        <header className="space-y-4">
-          <div className="flex items-center gap-3">
-             <div className="w-12 h-1 bg-orange-600 rounded-full"></div>
-             <p className="text-xs font-black uppercase tracking-[0.3em] text-orange-600">Premium AI Multi-Lab Hub</p>
+        <header className="flex items-center justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+               <div className="w-12 h-1 bg-orange-600 rounded-full"></div>
+               <p className="text-xs font-black uppercase tracking-[0.3em] text-orange-600">Premium AI Multi-Lab Hub</p>
+            </div>
+            <h1 className="text-7xl font-playfair font-black text-slate-900 tracking-tighter uppercase italic leading-[0.9]">DPSS STUDIO</h1>
           </div>
-          <h1 className="text-7xl font-playfair font-black text-slate-900 tracking-tighter uppercase italic leading-[0.9]">DPSS STUDIO</h1>
+          <button 
+            onClick={() => setMode(AppMode.SETTINGS)} 
+            className="w-14 h-14 bg-white rounded-2xl shadow-lg border border-slate-100 flex items-center justify-center text-slate-400 hover:text-orange-600 hover:shadow-xl transition-all group"
+          >
+            <i className="fa-solid fa-gear text-2xl group-hover:rotate-90 transition-transform duration-500"></i>
+          </button>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -42,6 +51,7 @@ const App: React.FC = () => {
   switch (mode) {
     case AppMode.COLORING_LAB: return <ColoringModule onBack={() => setMode(AppMode.DASHBOARD)} />;
     case AppMode.HIDDEN_OBJECTS: return <HiddenObjectModule onBack={() => setMode(AppMode.DASHBOARD)} />;
+    case AppMode.SETTINGS: return <SettingsModule onBack={() => setMode(AppMode.DASHBOARD)} />;
     default: return renderDashboard();
   }
 };
