@@ -2,8 +2,7 @@
 export enum AppMode {
   DASHBOARD = 'dashboard',
   COLORING_LAB = 'coloring_lab',
-  HIDDEN_OBJECTS = 'hidden_objects',
-  SETTINGS = 'settings'
+  HIDDEN_OBJECTS = 'hidden_objects'
 }
 
 export enum WorksheetLayout {

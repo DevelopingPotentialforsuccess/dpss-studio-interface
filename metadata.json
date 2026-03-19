@@ -1,6 +1,6 @@
 {
-  "name": "DPSS STUDIO: AI Multi-Lab Hub",
-  "description": "A professional AI-powered platform for generating educational content, coloring sheets, and hidden object games with custom API key support for Gemini, Grok, Deepseek, and ChatGPT.",
+  "name": "Remix: Book Creation 4 Deploy",
+  "description": "A professional AI-powered platform for generating custom books with advanced styling, handwritten aesthetics, and interactive layouts.",
   "requestFramePermissions": [
     "camera",
     "microphone"

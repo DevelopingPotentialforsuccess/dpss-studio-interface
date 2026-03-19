@@ -65,31 +65,18 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setFrameStyle(frames[Math.floor(Math.random() * frames.length)]);
   };
 
-  const generateBundles = async (indexToRegenerate?: number) => {
+  const generateBundles = async () => {
     if (!theme) return alert("Please provide a theme for the Hidden Object quest!");
-    
-    const isSinglePage = indexToRegenerate !== undefined;
-    const count = isSinglePage ? 1 : batchSize;
-
-    // Quota Warning for free tier
-    if (!isSinglePage && count > 1) {
-      const confirmMultiple = window.confirm(
-        `Generating ${count} sets will make ${count * (objectCount + 1)} image requests. \n\n` +
-        `If you are on the Gemini Free Tier, this will likely hit your quota quickly. \n\n` +
-        `Would you like to proceed anyway? (Tip: Use a personal API key in Settings for higher limits)`
-      );
-      if (!confirmMultiple) return;
-    }
-
     setLoading(true);
-    setLoadingMsg(isSinglePage ? "Regenerating set..." : "Calibrating educational logic...");
+    setLoadingMsg("Calibrating educational logic...");
+    setHints({});
     
     try {
       const newBundles: SheetBundle[] = [];
       const manualWords = wordSearchVocab.split(/[,\n]/).map(w => w.trim()).filter(w => w.length > 0);
 
-      for (let i = 0; i < count; i++) {
-        setLoadingMsg(isSinglePage ? "Generating new set..." : `Generating Set ${i + 1}/${count}...`);
+      for (let i = 0; i < batchSize; i++) {
+        setLoadingMsg(`Generating Set ${i + 1}/${batchSize}...`);
 
         const hiddenWords = await generateTracingWords(`Items found in a ${theme} scene for level ${level} kids.`, objectCount);
 
@@ -150,7 +137,7 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         newBundles.push({
           id: Math.random().toString(36).substr(2, 9),
-          theme: theme + (!isSinglePage && batchSize > 1 ? ` (Set ${i + 1})` : ''),
+          theme: theme + (batchSize > 1 ? ` (Set ${i + 1})` : ''),
           level,
           sceneImageUrl: mainImageUrl,
           items: itemsWithImages,
@@ -160,22 +147,9 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         });
       }
 
-      if (isSinglePage) {
-        const updated = [...generatedBundles];
-        updated[indexToRegenerate] = newBundles[0];
-        setGeneratedBundles(updated);
-      } else {
-        setGeneratedBundles([...newBundles, ...generatedBundles]);
-      }
+      setGeneratedBundles([...newBundles, ...generatedBundles]);
     } catch (e: any) {
-      console.error("Hidden Object Generation Error:", e);
-      if (e.message?.includes('429') || e.message?.includes('quota') || e.message?.includes('RESOURCE_EXHAUSTED')) {
-        alert("QUOTA EXHAUSTED: You've hit the Gemini API limit. \n\nTry again in a few minutes, or add a personal API key in Settings to increase your limits.");
-      } else if (e.message?.includes('safety')) {
-        alert("SAFETY BLOCK: The AI refused to generate this image due to safety filters. Try a different theme.");
-      } else {
-        alert("Lab Render Error: " + e.message);
-      }
+      alert("Lab Render Error: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -530,26 +504,10 @@ const HiddenObjectModule: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <h4 className="text-2xl font-black uppercase tracking-[0.5em] italic">Quest Designer Standby</h4>
               </div>
             ) : (
-              generatedBundles.map((bundle, bundleIdx) => (
+              generatedBundles.map((bundle) => (
                 <React.Fragment key={bundle.id}>
                   {/* Page 1 (3, 5, ...): Hidden Quest */}
-                  <div className="bg-white shadow-2xl flex flex-col print-page size-A4 relative rounded-[2rem] overflow-hidden p-12 mb-8 group/card">
-                    <div className="absolute top-4 right-4 z-50 opacity-0 group-hover/card:opacity-100 transition-opacity no-print flex gap-2">
-                      <button 
-                        onClick={() => generateBundles(bundleIdx)}
-                        className="bg-white/90 backdrop-blur shadow-lg border border-slate-200 p-3 rounded-xl text-orange-600 hover:bg-orange-600 hover:text-white transition-all"
-                        title="Regenerate this set"
-                      >
-                        <i className="fa-solid fa-arrows-rotate"></i>
-                      </button>
-                      <button 
-                        onClick={() => setGeneratedBundles(generatedBundles.filter(b => b.id !== bundle.id))}
-                        className="bg-white/90 backdrop-blur shadow-lg border border-slate-200 p-3 rounded-xl text-red-600 hover:bg-red-600 hover:text-white transition-all"
-                        title="Delete this set"
-                      >
-                        <i className="fa-solid fa-trash"></i>
-                      </button>
-                    </div>
+                  <div className="bg-white shadow-2xl flex flex-col print-page size-A4 relative rounded-[2rem] overflow-hidden p-12 mb-8 relative">
                     <FrameDecorator type={bundle.frameStyle} />
                     <HeaderBlock title="HIDDEN OBJECT QUEST" showScore />
                     <PageOneHiddenQuest bundle={bundle} />
