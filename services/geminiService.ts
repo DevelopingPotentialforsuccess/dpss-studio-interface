@@ -32,23 +32,25 @@ async function callOpenAICompatible(
   try {
     const response = await fetch('/api/ai/proxy', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        baseUrl,
-        apiKey,
-        model,
-        messages,
-        jsonMode
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl, apiKey, model, messages, jsonMode })
     });
 
-    const data = await response.json();
+    if (response.status === 404) {
+      throw new Error("Backend Proxy Not Found (404). If you are on Vercel, ensure you have deployed the full-stack version with the server.ts backend.");
+    }
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Invalid response from proxy: ${text.slice(0, 100)}...`);
+    }
     
     if (!response.ok) {
       console.error('AI Proxy Error:', data);
-      throw new Error(data.error?.message || `AI Provider Error (${response.status})`);
+      throw new Error(data.error?.message || data.error || data.message || `AI Provider Error (${response.status})`);
     }
 
     return data.choices[0].message.content;
@@ -153,7 +155,7 @@ async function runAI(options: {
   if (provider === 'deepseek') {
     if (!settings.deepseekKey) throw new Error("Deepseek Key missing in Settings.");
     return await callOpenAICompatible(
-      'https://api.deepseek.com',
+      'https://api.deepseek.com/v1',
       settings.deepseekKey,
       'deepseek-chat',
       [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],

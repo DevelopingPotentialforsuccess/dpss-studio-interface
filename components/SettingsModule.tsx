@@ -59,7 +59,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             baseUrl: provider === 'openai' ? 'https://api.openai.com/v1' :
-                     provider === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.x.ai/v1',
+                     provider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.x.ai/v1',
             apiKey: provider === 'openai' ? settings.openaiKey :
                     provider === 'deepseek' ? settings.deepseekKey : settings.grokKey,
             model: provider === 'openai' ? 'gpt-4o' :
@@ -69,9 +69,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
           })
         });
         
-        const data = await response.json();
+        if (response.status === 404) {
+          throw new Error("Backend Proxy Not Found (404). If you are on Vercel, ensure you have deployed the full-stack version with the server.ts backend.");
+        }
+        
+        let data;
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Invalid response from proxy: ${text.slice(0, 100)}...`);
+        }
+        
         if (!response.ok) {
-          throw new Error(data.error?.message || `Provider Error (${response.status})`);
+          throw new Error(data.error?.message || data.error || data.message || `Provider Error (${response.status})`);
         }
       }
       setTestStatus({ ...testStatus, [provider]: 'success' });
