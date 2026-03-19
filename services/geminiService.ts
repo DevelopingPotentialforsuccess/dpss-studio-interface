@@ -2,161 +2,207 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AISettings } from "../components/SettingsModule";
 
-const getSettings = (): AISettings | null => {
+const getSettings = (): AISettings => {
   const saved = localStorage.getItem('dpss_ai_settings');
   if (saved) {
     try {
       return JSON.parse(saved);
-    } catch (e) {
-      return null;
+    } catch (e) {}
+  }
+  return {
+    geminiKey: '',
+    openaiKey: '',
+    deepseekKey: '',
+    grokKey: '',
+    primaryProvider: 'gemini',
+    useCustomKeys: false
+  };
+};
+
+/**
+ * OpenAI-compatible API caller (via server proxy)
+ */
+async function callOpenAICompatible(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  messages: any[],
+  jsonMode: boolean = false
+) {
+  try {
+    const response = await fetch('/api/ai/proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        baseUrl,
+        apiKey,
+        model,
+        messages,
+        jsonMode
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error('AI Proxy Error:', data);
+      throw new Error(data.error?.message || `AI Provider Error (${response.status})`);
     }
+
+    return data.choices[0].message.content;
+  } catch (error: any) {
+    console.error('AI Request Failed:', error);
+    throw new Error(error.message || 'Failed to connect to AI Laboratory node.');
   }
-  return null;
-};
+}
 
 /**
- * Multi-Node Fallback Architecture
- * Automatically rotates keys when a quota or balance error occurs.
+ * Unified AI Caller
  */
-const getFallbackKeys = () => {
+async function runAI(options: {
+  prompt: string;
+  systemInstruction?: string;
+  jsonMode?: boolean;
+  imageUri?: string;
+  isImageGen?: boolean;
+}) {
   const settings = getSettings();
-  const keys = [
-    "AIzaSyDM0-uHXjX_LYwOLcs_j9virMFUL3eX2Xs", // Requested default
-    "AIzaSyAMdJJiItIVmN3zjzWqhZZX94cL8PzGJ7M",
-    "AIzaSyAqaqCaDHw2LQaYIke5CJ8ctM4oevspRig",
-    "AIzaSyApBrvFBVOGsyzTKxJ5eBts70Hy6VMslp0",
-    process.env.API_KEY, 
-  ];
+  const provider = settings.useCustomKeys ? settings.primaryProvider : 'gemini';
 
-  if (settings?.useCustomKeys && settings.geminiKey) {
-    // Prioritize user key
-    return [settings.geminiKey, ...keys.filter(Boolean)] as string[];
-  }
+  // 1. Handle Gemini (Built-in or Custom)
+  if (provider === 'gemini') {
+    const keys = [
+      settings.useCustomKeys ? settings.geminiKey : '',
+      process.env.API_KEY,
+      process.env.GEMINI_API_KEY
+    ].filter(Boolean) as string[];
 
-  return keys.filter(Boolean) as string[];
-};
+    if (keys.length === 0) throw new Error("No Gemini API Key found. Please add one in Settings.");
 
-/**
- * Executes operation with automatic rotation between keys on quota exhaustion.
- */
-async function runWithFallback<T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
-  const settings = getSettings();
-  
-  // If user explicitly chose a non-gemini provider, we should handle that
-  // For now, we'll focus on Gemini but allow the user to provide their own key
-  
-  const uniqueKeys = Array.from(new Set(getFallbackKeys()));
-  let lastError: any;
+    let lastError: any;
+    for (const key of keys) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: key });
+        if (options.isImageGen) {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: options.prompt,
+            config: { imageConfig: { aspectRatio: "1:1" } }
+          });
+          const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+          if (!imgPart) throw new Error("Image node response empty.");
+          return `data:image/png;base64,${imgPart.inlineData.data}`;
+        }
 
-  for (const key of uniqueKeys) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      return await operation(ai);
-    } catch (e: any) {
-      lastError = e;
-      const msg = (e.message || "").toLowerCase();
-      const isQuotaError = 
-        msg.includes("quota") || 
-        msg.includes("429") || 
-        msg.includes("exhausted") || 
-        msg.includes("limit") || 
-        msg.includes("balance") ||
-        msg.includes("billing") ||
-        msg.includes("credit") ||
-        msg.includes("capacity") ||
-        msg.includes("service_unavailable") ||
-        msg.includes("overloaded");
+        const contents: any = options.imageUri ? [
+          { inlineData: { mimeType: "image/png", data: options.imageUri.split(',')[1] } },
+          { text: options.prompt }
+        ] : options.prompt;
 
-      if (isQuotaError) {
-        console.warn(`[Node Rotation] Key ...${key.slice(-6)} busy. Switching node...`);
-        continue;
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents,
+          config: {
+            systemInstruction: options.systemInstruction,
+            responseMimeType: options.jsonMode ? "application/json" : undefined
+          }
+        });
+        if (!response.text) throw new Error("Gemini returned an empty response.");
+        return response.text;
+      } catch (e: any) {
+        lastError = e;
+        console.error(`Gemini Attempt Failed (Key: ${key.substring(0, 6)}...):`, e);
+        if (e.message?.includes("expired") || e.message?.includes("429") || e.message?.includes("quota") || e.message?.includes("limit")) continue;
+        throw new Error(`Gemini Error: ${e.message || 'Unknown error'}`);
       }
-      throw e;
     }
+    throw lastError;
   }
-  throw lastError || new Error("All AI Laboratory Nodes are currently at capacity. Try again in 60s.");
+
+  // 2. Handle OpenAI
+  if (provider === 'openai') {
+    if (!settings.openaiKey) throw new Error("OpenAI Key missing in Settings.");
+    if (options.isImageGen) {
+      const response = await fetch('/api/ai/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: settings.openaiKey,
+          model: 'dall-e-3',
+          isImageGen: true,
+          prompt: options.prompt
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "OpenAI Image Gen Failed");
+      return data.image;
+    }
+    return await callOpenAICompatible(
+      'https://api.openai.com/v1',
+      settings.openaiKey,
+      'gpt-4o',
+      [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],
+      options.jsonMode
+    );
+  }
+
+  // 3. Handle Deepseek
+  if (provider === 'deepseek') {
+    if (!settings.deepseekKey) throw new Error("Deepseek Key missing in Settings.");
+    return await callOpenAICompatible(
+      'https://api.deepseek.com',
+      settings.deepseekKey,
+      'deepseek-chat',
+      [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],
+      options.jsonMode
+    );
+  }
+
+  // 4. Handle Grok
+  if (provider === 'grok') {
+    if (!settings.grokKey) throw new Error("Grok Key missing in Settings.");
+    return await callOpenAICompatible(
+      'https://api.x.ai/v1',
+      settings.grokKey,
+      'grok-2-1212',
+      [{ role: 'system', content: options.systemInstruction || '' }, { role: 'user', content: options.prompt }],
+      options.jsonMode
+    );
+  }
+
+  throw new Error("Unknown Provider");
 }
 
 export const generateTracingWords = async (prompt: string, count: number = 3): Promise<string[]> => {
-  return await runWithFallback(async (ai) => {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Based on the topic: "${prompt}", generate exactly ${count} educational words suitable for kids. Return JSON with 'words' array.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: { words: { type: Type.ARRAY, items: { type: Type.STRING } } },
-          required: ["words"]
-        }
-      }
-    });
-    return JSON.parse(response.text || '{"words":[]}').words;
+  const text = await runAI({
+    prompt: `Generate exactly ${count} educational words suitable for kids based on: "${prompt}". Return JSON: {"words": ["word1", "word2", "word3"]}`,
+    jsonMode: true
   });
+  return JSON.parse(text || '{"words":[]}').words;
 };
 
 export const generateWordSearch = async (words: string[], level: number): Promise<string[][]> => {
-  return await runWithFallback(async (ai) => {
-    // Grid size based on level (1-10) -> 10x10 to 18x18
-    const gridSize = 8 + Math.floor(level);
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Create a word search grid of size ${gridSize}x${gridSize}. 
-      Include these words: ${words.join(', ')}. 
-      Level ${level} difficulty (1 is easy/horizontal only, 10 is complex/all directions).
-      Return JSON with 'grid' property as a 2D array of characters.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            grid: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
-            }
-          },
-          required: ["grid"]
-        }
-      }
-    });
-    const result = JSON.parse(response.text || '{"grid":[]}');
-    return result.grid;
+  const gridSize = 8 + Math.floor(level);
+  const text = await runAI({
+    prompt: `Create a word search grid of size ${gridSize}x${gridSize} containing: ${words.join(', ')}. Level ${level} difficulty. Return JSON: {"grid": [["A","B"],["C","D"]]}`,
+    jsonMode: true
   });
+  return JSON.parse(text || '{"grid":[]}').grid;
 };
 
 export const generateObjectHint = async (imageUri: string, items: string[]): Promise<string> => {
-  return await runWithFallback(async (ai) => {
-    const base64Data = imageUri.split(',')[1];
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [
-        {
-          inlineData: {
-            mimeType: "image/png",
-            data: base64Data
-          }
-        },
-        {
-          text: `This is a hidden object scene. The user is looking for these items: ${items.join(', ')}. Pick ONE item that is moderately difficult to find and describe its exact location in the image in a friendly, helpful way (e.g., "The cat is hiding behind the blue chimney in the top right corner"). Keep it concise.`
-        }
-      ]
-    });
-    return response.text || "I can't quite see the objects right now. Try looking near the center!";
+  return await runAI({
+    prompt: `This is a hidden object scene. The user is looking for: ${items.join(', ')}. Pick ONE item and describe its exact location in a friendly way.`,
+    imageUri
   });
 };
 
-export const generateIllustration = async (prompt: string, heroAvatars: string[] = []): Promise<string> => {
-  return await runWithFallback(async (ai) => {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: `Digital art: ${prompt}. Professional.`,
-      config: { imageConfig: { aspectRatio: "1:1" } }
-    });
-    const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-    if (!imgPart) throw new Error("Image node response empty.");
-    return `data:image/png;base64,${imgPart.inlineData.data}`;
+export const generateIllustration = async (prompt: string): Promise<string> => {
+  return await runAI({
+    prompt: `Digital art: ${prompt}. Professional, high quality, coloring book style if applicable.`,
+    isImageGen: true
   });
 };

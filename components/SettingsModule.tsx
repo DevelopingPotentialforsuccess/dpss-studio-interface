@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { GoogleGenAI } from "@google/genai";
 
 export interface AISettings {
   geminiKey: string;
@@ -37,6 +38,51 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
       }
     }
   }, []);
+
+  const [testStatus, setTestStatus] = useState<{[key: string]: 'idle' | 'testing' | 'success' | 'error'}>({});
+
+  const testConnection = async (provider: 'gemini' | 'openai' | 'deepseek' | 'grok') => {
+    setTestStatus({ ...testStatus, [provider]: 'testing' });
+    try {
+      if (provider === 'gemini') {
+        const key = settings.geminiKey || process.env.GEMINI_API_KEY;
+        if (!key) throw new Error('No key');
+        const ai = new GoogleGenAI({ apiKey: key });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: 'Hello'
+        });
+        if (!response.text) throw new Error('Empty response');
+      } else {
+        const response = await fetch('/api/ai/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            baseUrl: provider === 'openai' ? 'https://api.openai.com/v1' :
+                     provider === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.x.ai/v1',
+            apiKey: provider === 'openai' ? settings.openaiKey :
+                    provider === 'deepseek' ? settings.deepseekKey : settings.grokKey,
+            model: provider === 'openai' ? 'gpt-4o' :
+                   provider === 'deepseek' ? 'deepseek-chat' : 'grok-2-1212',
+            messages: [{ role: 'user', content: 'Hello' }],
+            jsonMode: false
+          })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || `Provider Error (${response.status})`);
+        }
+      }
+      setTestStatus({ ...testStatus, [provider]: 'success' });
+      setTimeout(() => setTestStatus(prev => ({ ...prev, [provider]: 'idle' })), 3000);
+    } catch (error: any) {
+      console.error(`Test failed for ${provider}:`, error);
+      alert(`Test failed for ${provider}: ${error.message}`);
+      setTestStatus({ ...testStatus, [provider]: 'error' });
+      setTimeout(() => setTestStatus(prev => ({ ...prev, [provider]: 'idle' })), 5000);
+    }
+  };
 
   const handleSave = () => {
     setSaveStatus('saving');
@@ -105,12 +151,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
           <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-all ${settings.useCustomKeys ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
             {/* Gemini */}
             <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-gem"></i></div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 uppercase italic">Google Gemini</h4>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Flash 3.0 & 2.5 Image</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-gem"></i></div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800 uppercase italic">Google Gemini</h4>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Flash 3.0 & 2.5 Image</p>
+                  </div>
                 </div>
+                <button 
+                  onClick={() => testConnection('gemini')}
+                  className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg border transition-all ${
+                    testStatus['gemini'] === 'testing' ? 'bg-slate-100 text-slate-400' :
+                    testStatus['gemini'] === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    testStatus['gemini'] === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
+                    'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {testStatus['gemini'] === 'testing' ? 'Testing...' : testStatus['gemini'] === 'success' ? 'Success!' : testStatus['gemini'] === 'error' ? 'Failed' : 'Test'}
+                </button>
               </div>
               <input 
                 type="password" 
@@ -123,12 +182,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
 
             {/* ChatGPT */}
             <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-robot"></i></div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 uppercase italic">OpenAI ChatGPT</h4>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">GPT-4o & DALL-E 3</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-robot"></i></div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800 uppercase italic">OpenAI ChatGPT</h4>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">GPT-4o & DALL-E 3</p>
+                  </div>
                 </div>
+                <button 
+                  onClick={() => testConnection('openai')}
+                  className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg border transition-all ${
+                    testStatus['openai'] === 'testing' ? 'bg-slate-100 text-slate-400' :
+                    testStatus['openai'] === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    testStatus['openai'] === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
+                    'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {testStatus['openai'] === 'testing' ? 'Testing...' : testStatus['openai'] === 'success' ? 'Success!' : testStatus['openai'] === 'error' ? 'Failed' : 'Test'}
+                </button>
               </div>
               <input 
                 type="password" 
@@ -141,12 +213,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
 
             {/* Deepseek */}
             <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-brain"></i></div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 uppercase italic">Deepseek AI</h4>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Deepseek-V3 & R1</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-brain"></i></div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800 uppercase italic">Deepseek AI</h4>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Deepseek-V3 & R1</p>
+                  </div>
                 </div>
+                <button 
+                  onClick={() => testConnection('deepseek')}
+                  className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg border transition-all ${
+                    testStatus['deepseek'] === 'testing' ? 'bg-slate-100 text-slate-400' :
+                    testStatus['deepseek'] === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    testStatus['deepseek'] === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
+                    'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {testStatus['deepseek'] === 'testing' ? 'Testing...' : testStatus['deepseek'] === 'success' ? 'Success!' : testStatus['deepseek'] === 'error' ? 'Failed' : 'Test'}
+                </button>
               </div>
               <input 
                 type="password" 
@@ -159,12 +244,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ onBack }) => {
 
             {/* Grok */}
             <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-x"></i></div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 uppercase italic">X.AI Grok</h4>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Grok-2 & Grok-Vision</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white text-lg shadow-md"><i className="fa-solid fa-x"></i></div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800 uppercase italic">X.AI Grok</h4>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Grok-2 & Grok-Vision</p>
+                  </div>
                 </div>
+                <button 
+                  onClick={() => testConnection('grok')}
+                  className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg border transition-all ${
+                    testStatus['grok'] === 'testing' ? 'bg-slate-100 text-slate-400' :
+                    testStatus['grok'] === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    testStatus['grok'] === 'error' ? 'bg-red-50 text-red-600 border-red-200' :
+                    'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {testStatus['grok'] === 'testing' ? 'Testing...' : testStatus['grok'] === 'success' ? 'Success!' : testStatus['grok'] === 'error' ? 'Failed' : 'Test'}
+                </button>
               </div>
               <input 
                 type="password" 
